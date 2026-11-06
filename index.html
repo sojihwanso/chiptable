@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="친구들과 각자 휴대폰으로 칩을 나눠 갖고 베팅하는 놀이용 포커 칩 테이블">
+<title>칩테이블</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+<style>
+/* Layout: one phone-width column; a felt table holds seats, pot and your chips, controls sit on the rail below. */
+:root{
+  --bg:#e7eae3; --surface:#f6f7f2; --line:#cdd5ca; --fg:#17201b; --muted:#56655b;
+  --felt:#1d5a40; --felt-2:#123f2c; --felt-ink:#eef4ee; --felt-muted:#a7c4b2; --felt-line:rgba(255,255,255,.14);
+  --rail:#4b3524; --gold:#d6a93e; --gold-ink:#241a04; --danger:#b03a2c; --ok:#2f7d4f;
+  --f-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1310; --surface:#151d18; --line:#2a362e; --fg:#e5ece6; --muted:#93a399;
+  --felt:#194d36; --felt-2:#0e3121; --rail:#2d2016; --danger:#e2634f; --ok:#5fb382; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1310; --surface:#151d18; --line:#2a362e; --fg:#e5ece6; --muted:#93a399;
+  --felt:#194d36; --felt-2:#0e3121; --rail:#2d2016; --danger:#e2634f; --ok:#5fb382; color-scheme:dark}
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+html,body{background:var(--bg);color:var(--fg)}
+body{margin:0}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 32px}
+#app{max-width:600px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.num{font-family:var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+h1,h2{text-wrap:balance;margin:0}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;font-weight:600;min-height:44px}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.btn.danger{color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.block{width:100%}
+.label{font-size:12px;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.notice{font-size:13px;color:var(--muted);text-align:center}
+input,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box}
+.field{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* chips */
+.stack{--w:56px;--band:6px;display:flex;flex-direction:column;align-items:center;width:calc(var(--w) + 4px);background:none;border:0;padding:0;color:var(--felt-ink);-webkit-tap-highlight-color:transparent}
+.stack.sm{--w:34px;--band:4px}
+.face{display:block;width:var(--w);height:calc(var(--w) * .46);position:relative;z-index:2}
+.face svg{width:var(--w);height:var(--w);transform:scaleY(.46);transform-origin:top center;display:block}
+.sides{display:flex;flex-direction:column;width:var(--w);margin-top:calc(var(--w) * -.23)}
+.sc{display:block;height:var(--band);background:linear-gradient(90deg,var(--b) 0 9%,var(--s) 9% 17%,var(--b) 17% 42%,var(--s) 42% 58%,var(--b) 58% 83%,var(--s) 83% 91%,var(--b) 91%);box-shadow:inset 0 -1px 0 rgba(0,0,0,.32)}
+.sc.first{height:calc(var(--band) + var(--w) * .23)}
+.sc:last-child{border-radius:0 0 50% 50% / 0 0 calc(var(--band)) calc(var(--band));box-shadow:inset 0 -2px 0 rgba(0,0,0,.35)}
+.cnt{font-family:var(--f-display);font-weight:600;font-size:15px;margin-top:3px;color:var(--felt-muted)}
+button.stack:active .face{transform:translateY(-4px)}
+button.stack:disabled{opacity:.35}
+.pile{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-end;gap:2px;min-height:40px}
+
+/* home */
+.hero{background:var(--felt);background-image:radial-gradient(120% 90% at 50% 0%,rgba(255,255,255,.08),transparent 60%);color:var(--felt-ink);border:10px solid var(--rail);border-radius:28px;padding:26px 20px 22px;display:flex;flex-direction:column;gap:16px;text-align:center}
+.hero h1{font-family:var(--f-display);font-size:54px;line-height:.95;letter-spacing:.02em;font-weight:700}
+.hero p{margin:0;color:var(--felt-muted)}
+.hero .pile{gap:6px;min-height:auto}
+.menu{display:grid;gap:10px}
+
+/* table */
+.top{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.brand{font-family:var(--f-display);font-weight:700;font-size:24px;letter-spacing:.02em}
+.code{font-family:var(--f-display);font-size:20px;font-weight:700;letter-spacing:.18em;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:2px 10px}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.on{color:var(--ok);border-color:currentColor}
+.pill.bad{color:var(--danger);border-color:currentColor}
+.table{background:var(--felt);background-image:radial-gradient(110% 70% at 50% 38%,rgba(255,255,255,.07),transparent 65%);color:var(--felt-ink);border:10px solid var(--rail);border-radius:28px;padding:14px 12px 16px;display:flex;flex-direction:column;gap:14px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.seats{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.seat{flex:0 0 auto;min-width:96px;text-align:left;background:rgba(0,0,0,.2);border:1px solid var(--felt-line);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;color:var(--felt-ink)}
+.seat.me{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.seat.fold{opacity:.45}
+.seat.turn{background:rgba(214,169,62,.2);border-color:var(--gold);animation:turnglow 1.6s ease-in-out infinite}
+@keyframes turnglow{50%{box-shadow:0 0 0 3px rgba(214,169,62,.45)}}
+.bd.t{background:var(--gold);color:var(--gold-ink)}
+.seat .nm{font-weight:600;font-size:14px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seat .st{font-family:var(--f-display);font-size:22px;font-weight:700;line-height:1}
+.seat .bt{font-size:12px;color:var(--felt-muted)}
+.seat .bt b{color:var(--gold);font-weight:600}
+.badges{display:flex;gap:4px;min-height:18px}
+.bd{font-family:var(--f-display);font-weight:700;font-size:12px;border-radius:999px;padding:0 6px;background:var(--felt-ink);color:var(--felt-2)}
+.bd.d{background:var(--gold);color:var(--gold-ink)}
+.bd.off{background:transparent;color:var(--felt-muted);border:1px solid var(--felt-line)}
+.pot{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;border:1px dashed var(--felt-line);border-radius:999px}
+.pot .amt{font-family:var(--f-display);font-weight:700;font-size:34px;line-height:1}
+.pot .sub{font-size:12px;color:var(--felt-muted)}
+.mine{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--felt-line);padding-top:12px}
+.mine-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mine-head .total{font-family:var(--f-display);font-weight:700;font-size:28px}
+.stacks{display:flex;flex-wrap:wrap;gap:6px 4px;justify-content:center;align-items:flex-end;min-height:80px}
+.tray{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.22);border-radius:14px;padding:10px;min-height:64px}
+.tray .pile{flex:1;justify-content:flex-start;min-width:0}
+.tray .amt{font-family:var(--f-display);font-weight:700;font-size:26px;color:var(--gold)}
+.tray .hint{font-size:13px;color:var(--felt-muted);flex:1}
+.actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.actions .btn{padding:10px 4px}
+.actions .btn.sel{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.raise{justify-content:center}
+.raise button{color:var(--fg)}
+.send{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+.tools{display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
+.tools .row .btn{flex:1 1 30%}
+.who{display:flex;gap:6px;overflow-x:auto}
+.who .btn{flex:0 0 auto;min-height:36px;padding:6px 12px}
+.who .btn.sel{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.log{list-style:none;margin:0;padding:0;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.log li:first-child{color:var(--fg)}
+.waiting{color:var(--felt-muted);text-align:center;padding:10px}
+
+/* sheet */
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.panel{background:var(--bg);color:var(--fg);width:100%;max-width:600px;max-height:86vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px;box-sizing:border-box}
+.panel h2{font-size:20px}
+.plist{display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;flex-wrap:wrap}
+.prow .nm{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prow .btn{min-height:36px;padding:6px 10px;font-size:13px}
+.pick{display:flex;flex-wrap:wrap;gap:8px}
+.pick button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;font-weight:600}
+.pick button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.pick button.dim{opacity:.55}
+.rank{display:flex;flex-direction:column;gap:6px}
+.rank div{display:flex;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+@keyframes pop{from{transform:scale(.6);opacity:.2}to{transform:none;opacity:1}}
+.tray .pile .stack:last-child{animation:pop .18s ease-out}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:380px){.stack{--w:48px}.actions .btn{font-size:13px}}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+<div id="sheet" hidden></div>
+
+<script>
+(function(){
+const DEN=[1,5,25,100,500,1000,5000];
+const CHIP={1:['#f1efe7','#2c5bb0','#2c5bb0'],5:['#c3302d','#f6f1e4','#a52623'],25:['#23804e','#f6f1e4','#1b6a40'],100:['#1d1d20','#f6f1e4','#1d1d20'],500:['#6a3e9f','#f6f1e4','#58318a'],1000:['#e0b22e','#1d1d20','#7d5d0c'],5000:['#df722a','#1d1d20','#9c4a14']};
+const $=s=>document.querySelector(s);
+const app=$('#app'), sheet=$('#sheet');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n||0).toLocaleString('ko-KR');
+const clean=s=>String(s||'').replace(/[\u0000-\u001f​-‏‪-‮]/g,'').trim().slice(0,12)||'이름 없음';
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+/* ---------- chip drawing ---------- */
+function fd(d){return d>=1000?(d/1000)+'K':String(d)}
+function chipSVG(d){const [b,s,l]=CHIP[d];let sp='';for(let i=0;i<8;i++)sp+=`<rect x="44.5" y="2.5" width="11" height="13" rx="1.5" fill="${s}" transform="rotate(${i*45+22.5} 50 50)"/>`;
+ return `<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" fill="${b}"/>${sp}<circle cx="50" cy="50" r="47.5" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="1.5"/><circle cx="50" cy="50" r="34" fill="none" stroke="${s}" stroke-width="2.2" stroke-dasharray="5 3.4"/><circle cx="50" cy="50" r="27" fill="#f7f2e6" stroke="${l}" stroke-width="2.4"/><text x="50" y="51" text-anchor="middle" dominant-baseline="central" font-family="Barlow Condensed,Arial Narrow,sans-serif" font-weight="700" font-size="${d>=1000?24:28}" fill="${l}">${fd(d)}</text></svg>`}
+function stackHTML(d,n,o={}){const [b,s]=CHIP[d];const vis=Math.max(1,Math.min(n,o.sm?6:10));let sides='';for(let i=0;i<vis;i++)sides+=`<i class="sc${i===0?' first':''}" style="--b:${b};--s:${s}"></i>`;
+ const tag=o.btn?'button':'div';const attr=o.btn?`type="button" data-act="tap" data-d="${d}" aria-label="${d}점 칩 하나 올리기"${o.dis?' disabled':''}`:'aria-hidden="true"';
+ return `<${tag} class="stack${o.sm?' sm':''}" ${attr}><span class="face">${chipSVG(d)}</span><span class="sides">${sides}</span>${o.cnt===false?'':`<span class="cnt">×${n}</span>`}</${tag}>`}
+function decompose(t){const out=[];let r=Math.max(0,Math.floor(t||0));for(let i=DEN.length-1;i>=0;i--){const d=DEN[i];const c=i===0?r:Math.max(0,Math.floor((r-DEN[i-1]*8)/d));if(c>0){out.push([d,c]);r-=c*d}}return out}
+function pileHTML(t){return decompose(t).map(([d,c])=>stackHTML(d,c,{sm:true,cnt:false})).join('')}
+
+/* ---------- sound ---------- */
+let ac=null,soundOn=store.get('ct.sound')!==false;
+function clack(){if(soundOn){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const t=ac.currentTime;for(let k=0;k<2;k++){const len=.03,buf=ac.createBuffer(1,Math.floor(ac.sampleRate*len),ac.sampleRate),dt=buf.getChannelData(0);for(let i=0;i<dt.length;i++)dt[i]=(Math.random()*2-1)*Math.pow(1-i/dt.length,3);const src=ac.createBufferSource();src.buffer=buf;const f=ac.createBiquadFilter();f.type='bandpass';f.frequency.value=2400+k*1100;f.Q.value=3;const g=ac.createGain();g.gain.value=.55;src.connect(f).connect(g).connect(ac.destination);src.start(t+k*.05)}}catch(e){}}
+ try{navigator.vibrate&&navigator.vibrate(12)}catch(e){}}
+
+/* ---------- state ---------- */
+let mode=null;          // 'host' | 'player' | 'local'
+let st=null;            // game state
+let hist=[];
+let me=store.get('ct.me')||{};
+if(!me.pid){me.pid='p'+Math.random().toString(36).slice(2,10);store.set('ct.me',me)}
+let actor=null, staged=0, raiseOpen=false, view='home', setupKind='host', net='none', tbl=null, beat=null, pending=null, slow=false, sel=null;
+
+function newState(code,cfg){return {code,cfg,players:[],pot:0,hand:0,dp:null,sbp:null,bbp:null,acks:{},log:[],inChips:0}}
+const P=pid=>st&&st.players.find(p=>p.p===pid);
+const maxBet=()=>st.players.reduce((m,p)=>Math.max(m,p.b),0);
+const tableTotal=()=>st.pot+st.players.reduce((a,p)=>a+p.s+p.b,0);
+function log(s){st.log.unshift(s);st.log=st.log.slice(0,30)}
+function addPlayer(pid,n){const p={p:pid,n:clean(n),s:st.cfg.start,b:0,f:false,r:0,on:true};st.players.push(p);st.inChips+=st.cfg.start;return p}
+function snap(){hist.push(JSON.stringify({...st,acks:undefined}));if(hist.length>40)hist.shift()}
+function undo(){if(!hist.length)return;const acks=st.acks;st=JSON.parse(hist.pop());st.acks=acks;log('되돌림');commit(false)}
+function save(){if(mode==='host')store.set('ct.host',st);if(mode==='local')store.set('ct.local',st)}
+
+function doMove(pl,q){if(!pl)return false;const mx=maxBet();let a;
+ switch(q.t){
+  case 'call':{const need=mx-pl.b;if(need<=0){log(`${pl.n} 체크`);return true}a=Math.min(need,pl.s);break}
+  case 'allin':a=pl.s;break;
+  case 'bet':a=Math.floor(Number(q.a));break;
+  case 'check':if(pl.f)return false;log(`${pl.n} 체크`);return true;
+  case 'fold':if(pl.f)return false;pl.f=true;log(`${pl.n} 폴드`);return true;
+  default:return false}
+ if(pl.f||!(a>0)||a>pl.s)return false;
+ pl.s-=a;pl.b+=a;
+ let w=pl.b>mx&&mx>0?`레이즈 → ${fmt(pl.b)}`:pl.b===mx?`콜 ${fmt(a)}`:`베팅 ${fmt(a)}`;
+ if(pl.s===0)w=`올인 ${fmt(a)}`;
+ log(`${pl.n} ${w}`);return true}
+function collect(){let m=0;for(const p of st.players){m+=p.b;p.b=0}st.pot+=m;return m}
+function idxOf(pid){return st.players.findIndex(p=>p.p===pid)}
+function nextIdx(i){const L=st.players.length;for(let k=1;k<=L;k++){const j=((i+k)%L+L)%L;if(st.players[j].s>0)return j}return -1}
+function seatAfter(i,pred){const L=st.players.length;for(let k=1;k<=L;k++){const j=((i+k)%L+L)%L;if(pred(st.players[j]))return j}return -1}
+function seatBefore(i,pred){const L=st.players.length;for(let k=1;k<=L;k++){const j=((i-k)%L+L)%L;if(pred(st.players[j]))return j}return -1}
+function endHand(){st.turn=null;st.acted=[];st.inHand=[]}
+function newHand(firstPid){const has=p=>p.s>0;st.players.forEach(p=>p.f=false);
+ const act=st.players.filter(has);if(act.length<2){log('칩이 남은 사람이 2명 이상이어야 새 판을 시작할 수 있어요');return false}
+ const m=collect();let fi=firstPid?idxOf(firstPid):-1;if(fi<0||!has(st.players[fi]))fi=seatAfter(idxOf(st.fp),has);
+ const blinds=st.cfg.bb>0;let di,si=-1,bi=-1;
+ if(!blinds)di=seatBefore(fi,has);else if(act.length===2){di=fi;si=fi;bi=seatAfter(fi,has)}else{bi=seatBefore(fi,has);si=seatBefore(bi,has);di=seatBefore(si,has)}
+ st.fp=st.players[fi].p;st.dp=st.players[di].p;st.sbp=si>=0?st.players[si].p:null;st.bbp=bi>=0?st.players[bi].p:null;st.hand++;
+ st.inHand=act.map(p=>p.p);st.acted=[];st.round=1;
+ const post=(i,v)=>{const p=st.players[i];const a=Math.min(v,p.s);p.s-=a;p.b+=a};
+ if(blinds){post(si,st.cfg.sb);post(bi,st.cfg.bb)}
+ st.turn=st.players[fi].p;if(st.players[fi].s===0){const j=seatAfter(fi,p=>st.inHand.includes(p.p)&&p.s>0);st.turn=j<0?null:st.players[j].p}
+ log(`${st.hand}번째 판 · 선 ${st.players[fi].n}${blinds?` · 블라인드 ${fmt(st.cfg.sb)}/${fmt(st.cfg.bb)}`:''}${m?` (남은 베팅 ${fmt(m)} 팟으로)`:''}`)}
+function applyAct(pl,q){if(!pl)return false;const turnMode=!!st.turn;if(turnMode&&pl.p!==st.turn)return false;const mx=maxBet();
+ if(turnMode){if(q.t==='check'&&pl.b<mx)return false;if(q.t==='bet'){const a=Math.floor(Number(q.a));if(pl.b+a<mx&&a<pl.s)return false}}
+ const ok=doMove(pl,q);if(ok&&turnMode)advance(pl,maxBet()>mx);return ok}
+function advance(pl,raised){st.acted=st.acted||[];if(raised)st.acted=[pl.p];else if(!st.acted.includes(pl.p))st.acted.push(pl.p);
+ const ih=st.inHand||[],alive=st.players.filter(p=>ih.includes(p.p)&&!p.f);
+ if(alive.length===1){const w=alive[0];collect();const tot=st.pot;w.s+=tot;st.pot=0;log(`${w.n}만 남아 팟 ${fmt(tot)} 획득`);endHand();return}
+ const can=alive.filter(p=>p.s>0),mx=maxBet(),done=can.every(p=>st.acted.includes(p.p)&&p.b===mx);
+ if(!done){const j=seatAfter(idxOf(pl.p),p=>ih.includes(p.p)&&!p.f&&p.s>0&&!(st.acted.includes(p.p)&&p.b===mx));st.turn=j<0?null:st.players[j].p;return}
+ collect();st.round=(st.round||1)+1;st.acted=[];
+ if(can.length<=1){st.turn=null;log(`라운드 끝 · 팟 ${fmt(st.pot)} · 더 베팅할 사람이 없어요. 카드를 모두 펼치고 팟을 나누세요`);return}
+ const j=seatAfter(idxOf(st.dp),p=>ih.includes(p.p)&&!p.f&&p.s>0);st.turn=st.players[j].p;
+ log(`라운드 끝 · 팟 ${fmt(st.pot)} · 다음 라운드는 ${st.players[j].n}부터`)}
+function award(pids,amount){collect();amount=Math.min(Math.max(0,Math.floor(amount)),st.pot);if(!amount||!pids.length)return false;
+ const L=st.players.length,di=Math.max(0,idxOf(st.dp));
+ const ws=pids.map(P).filter(Boolean).sort((x,y)=>((idxOf(x.p)-di-1+L)%L)-((idxOf(y.p)-di-1+L)%L));
+ const share=Math.floor(amount/ws.length),rem=amount-share*ws.length;
+ ws.forEach((w,i)=>{w.s+=share+(i<rem?1:0)});st.pot-=amount;if(!st.pot)endHand();
+ log(ws.length===1?`${ws[0].n} 팟 ${fmt(amount)} 획득`:`${ws.map(w=>w.n).join(', ')} 팟 ${fmt(amount)} 나눔`);return true}
+
+/* host / local commit */
+function commit(sound=true){if(mode==='local'&&st.turn)actor=st.turn;save();broadcast();if(sound)clack();render()}
+function hostDo(fn){snap();const ok=fn();if(ok===false){hist.pop();render();return}commit()}
+
+/* ---------- network ---------- */
+const SB_URL='https://uwxfjotznhnyyefhxaqy.supabase.co', SB_KEY='sb_publishable_-bzLWFie-_zDftp8kfkaBw_Tzb09Kyy';
+let sbClient=null;
+const myPeer='k'+Math.random().toString(36).slice(2,12);
+async function getRoom(){try{if(!window.supabase)return null;sbClient=sbClient||window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});return {join:name=>sbJoin(name)}}catch(e){return null}}
+function sbJoin(name){
+ const ch=sbClient.channel(name,{config:{broadcast:{self:false},presence:{key:myPeer}}});
+ let mine={},live=false,prev=new Map(),peerList=[];const peerCbs=[],connCbs=[];
+ const toPeers=()=>{const ps=ch.presenceState(),out=[];for(const k in ps){const m=ps[k]&&ps[k][ps[k].length-1];if(!m)continue;const {presence_ref,...pr}=m;out.push({peer:k,presence:pr,isMe:k===myPeer,sameTab:k===myPeer})}return out};
+ ch.on('presence',{event:'sync'},()=>{peerList=toPeers();const now=new Map(peerList.map(p=>[p.peer,JSON.stringify(p.presence)]));
+  const joined=peerList.filter(p=>!prev.has(p.peer)),updated=peerList.filter(p=>prev.has(p.peer)&&prev.get(p.peer)!==now.get(p.peer)),left=[...prev.keys()].filter(k=>!now.has(k)).map(k=>({peer:k,presence:{}}));
+  prev=now;if(joined.length||updated.length||left.length)peerCbs.forEach(f=>f({peers:peerList,joined,updated,left}))});
+ const setLive=v=>{if(live!==v){live=v;connCbs.forEach(f=>f(v))}};
+ return new Promise((resolve,reject)=>{let done=false;
+  ch.subscribe(status=>{if(status==='SUBSCRIBED'){setLive(true);ch.track(mine).catch(()=>{});if(!done){done=true;resolve(api)}}
+   else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){setLive(false);if(!done){done=true;reject(new Error(status))}}});
+  const api={
+   emit:(topic,data)=>ch.send({type:'broadcast',event:topic,payload:{data,peer:myPeer}}).then(()=>{}),
+   on:(topic,handler)=>{ch.on('broadcast',{event:topic},({payload})=>{if(payload)handler({topic,data:payload.data,peer:payload.peer})});return ()=>{}},
+   presence:patch=>{for(const k in patch){if(patch[k]===null)delete mine[k];else mine[k]=patch[k]}return live?ch.track({...mine}).then(()=>{}):Promise.resolve()},
+   peers:()=>peerList,
+   onPeers:handler=>{peerCbs.push(handler);return ()=>{}},
+   connected:()=>live,
+   onConnection:handler=>{connCbs.push(handler);setTimeout(()=>handler(live),0);return ()=>{}},
+   leave:()=>{setLive(false);return sbClient.removeChannel(ch).then(()=>{})}
+  };
+  setTimeout(()=>{if(!done){done=true;reject(new Error('timeout'))}},12000)})}
+const roomName=c=>'ct-'+c.toLowerCase();
+function pack(){return {code:st.code,cfg:st.cfg,pot:st.pot,turn:st.turn||null,hand:st.hand,dp:st.dp,sbp:st.sbp,bbp:st.bbp,acks:st.acks,log:st.log.slice(0,6),pl:st.players.map(p=>[p.p,p.n,p.s,p.b,p.f?1:0,p.r,p.on?1:0])}}
+function unpack(d){return {code:d.code,cfg:d.cfg||{},pot:+d.pot||0,turn:d.turn||null,hand:+d.hand||0,dp:d.dp,sbp:d.sbp,bbp:d.bbp,acks:d.acks||{},log:Array.isArray(d.log)?d.log.map(String):[],players:(d.pl||[]).map(a=>({p:String(a[0]),n:clean(a[1]),s:+a[2]||0,b:+a[3]||0,f:!!a[4],r:+a[5]||0,on:!!a[6]}))}}
+function broadcast(){if(mode==='host'&&tbl){tbl.emit('state',pack()).catch(()=>{})}}
+function watchConn(){tbl.onConnection(c=>{net=c?'on':'wait';render()},()=>{net='none';render()})}
+
+async function hostConnect(){net='wait';render();const r=await getRoom();if(!r){net='none';render();return}
+ try{tbl=await r.join(roomName(st.code))}catch(e){net='none';render();return}
+ watchConn();tbl.presence({role:'host',code:st.code}).catch(()=>{});
+ tbl.onPeers(onHostPeers,()=>{});clearInterval(beat);beat=setInterval(broadcast,4000)}
+function onHostPeers(ch){if(mode!=='host')return;let changed=false;const online=new Set();
+ for(const p of ch.peers){const pr=p.presence||{};if(pr.role==='player'&&pr.code===st.code&&typeof pr.pid==='string')online.add(pr.pid)}
+ for(const p of [...ch.joined,...ch.updated]){const pr=p.presence||{};if(pr.role!=='player'||pr.code!==st.code||typeof pr.pid!=='string'||pr.pid===me.pid)continue;
+  let pl=P(pr.pid);
+  if(!pl){if(st.players.length>=st.cfg.max)continue;snap();pl=addPlayer(pr.pid,pr.n);log(`${pl.n} 입장 · ${fmt(st.cfg.start)}점 지급`);changed=true}
+  else if(pr.n&&clean(pr.n)!==pl.n){pl.n=clean(pr.n);changed=true}
+  const q=pr.req;if(q&&typeof q.id==='number'&&q.id>(st.acks[pl.p]||0)){snap();if(applyAct(pl,q))clack();else hist.pop();st.acks[pl.p]=q.id;changed=true}}
+ for(const pl of st.players){if(pl.p===me.pid)continue;const on=online.has(pl.p);if(pl.on!==on){pl.on=on;changed=true}}
+ if(changed||ch.joined.length){save();broadcast();render()}}
+
+async function playerConnect(){net='wait';render();const r=await getRoom();if(!r){net='none';render();return}
+ try{tbl=await r.join(roomName(st.code))}catch(e){net='none';render();return}
+ watchConn();
+ tbl.on('state',msg=>{const d=msg.data;if(!d||d.code!==st.code)return;const hp=tbl.peers().find(p=>p.peer===msg.peer);if(hp&&hp.presence&&hp.presence.role&&hp.presence.role!=='host')return;
+  const was=P(me.pid);st=unpack(d);st.got=true;const now=P(me.pid);
+  if(pending&&(st.acks[me.pid]||0)>=pending.id){pending=null;slow=false;clack()}
+  if(was&&now&&staged>now.s)staged=0;render()},()=>{});
+ tbl.presence({role:'player',code:st.code,pid:me.pid,n:me.name,req:null}).catch(()=>{})}
+function sendReq(t,a){if(pending)return;const id=Date.now();pending={id,t,a};slow=false;if(t==='bet')staged=0;
+ tbl&&tbl.presence({req:{id,t,a:a||0}}).catch(()=>{});render();
+ setTimeout(()=>{if(pending&&pending.id===id){slow=true;render()}},7000)}
+
+/* ---------- actions from UI ---------- */
+function myPlayer(){if(mode==='local')return P(actor);return P(me.pid)}
+function act(t,a){const pl=myPlayer();if(!pl)return;raiseOpen=false;
+ if(mode==='player'){sendReq(t,a);return}
+ hostDo(()=>applyAct(pl,{t,a}));if(t==='bet')staged=0;render()}
+
+function startTable(kind,f){mode=kind;hist=[];staged=0;pending=null;
+ const code=kind==='local'?'':Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random()*24)]).join('');
+ st=newState(code,{start:f.start,sb:f.sb,bb:f.bb,max:f.max});
+ if(kind==='host'){me.name=clean(f.name);store.set('ct.me',me);if(f.play)addPlayer(me.pid,me.name);log(`테이블 ${code} 열림`);save();view='table';hostConnect()}
+ else{f.names.forEach((n,i)=>addPlayer('L'+(i+1)+Math.random().toString(36).slice(2,6),n));actor=st.players[0]?.p;log('한 기기 테이블 시작');save();view='table'}
+ wake();render()}
+function resume(kind){mode=kind;st=store.get(kind==='host'?'ct.host':'ct.local');hist=[];staged=0;if(!st){view='home';render();return}
+ if(kind==='local')actor=st.players[0]?.p;view='table';wake();render();if(kind==='host')hostConnect()}
+function joinTable(code,name){mode='player';me.name=clean(name);me.last=code;store.set('ct.me',me);st={code,cfg:{},players:[],pot:0,hand:0,acks:{},log:[]};pending=null;staged=0;view='table';wake();render();playerConnect()}
+async function leave(){try{tbl&&await tbl.leave()}catch(e){}tbl=null;clearInterval(beat);net='none';mode=null;view='home';closeSheet();render()}
+let lock=null;async function wake(){try{if(navigator.wakeLock&&!lock)lock=await navigator.wakeLock.request('screen')}catch(e){}}
+
+/* ---------- views ---------- */
+function render(){
+ if(view==='home')app.innerHTML=homeHTML();
+ else if(view==='setup')app.innerHTML=setupHTML();
+ else if(view==='join')app.innerHTML=joinHTML();
+ else app.innerHTML=tableHTML();
+}
+function homeHTML(){const h=store.get('ct.host'),l=store.get('ct.local');
+ return `<section class="hero"><div class="pile">${stackHTML(500,4,{cnt:false})}${stackHTML(100,8,{cnt:false})}${stackHTML(25,6,{cnt:false})}${stackHTML(5,9,{cnt:false})}${stackHTML(1,5,{cnt:false})}</div>
+ <h1>칩테이블</h1><p>카드는 있는데 칩이 없을 때. 각자 휴대폰으로 칩을 나눠 갖고 베팅하세요.</p></section>
+ <div class="menu">
+  <button class="btn primary block" data-act="go-setup" data-k="host">테이블 만들기</button>
+  <button class="btn block" data-act="go-join">코드로 참가하기</button>
+  <button class="btn block" data-act="go-setup" data-k="local">한 기기로 하기</button>
+  ${h?`<button class="btn block" data-act="resume" data-k="host">진행 중인 테이블 ${esc(h.code)} 이어서 하기</button>`:''}
+  ${l?`<button class="btn block" data-act="resume" data-k="local">한 기기 테이블 이어서 하기</button>`:''}
+ </div>
+ <p class="notice">칩은 놀이용 점수입니다. 실제 돈을 걸지 마세요.</p>`}
+function setupHTML(){const host=setupKind==='host';const s=store.get('ct.setup')||{};
+ return `<div class="top"><button class="btn" data-act="home">← 처음으로</button><span class="brand">${host?'테이블 만들기':'한 기기로 하기'}</span></div>
+ <form id="setup" class="tools" autocomplete="off">
+  ${host?`<div class="field"><label class="label" for="s-name">내 이름</label><input id="s-name" maxlength="12" required value="${esc(me.name||'')}" placeholder="예: 지환"></div>
+  <label class="row"><input id="s-play" type="checkbox" style="width:auto" checked> 나도 함께 칩을 받고 참여</label>
+  <div class="field"><label class="label" for="s-max">최대 인원 (2~10)</label><input id="s-max" type="number" min="2" max="10" value="${s.max||6}" inputmode="numeric"></div>`
+  :`<div class="field"><label class="label" for="s-names">플레이어 이름 (한 줄에 한 명, 2~10명)</label><textarea id="s-names" rows="4" placeholder="지환&#10;민수&#10;서연"></textarea></div>`}
+  <div class="field"><label class="label" for="s-start">1인 시작 칩</label><input id="s-start" type="number" min="10" max="100000" step="1" value="${s.start||1000}" inputmode="numeric">
+   <div class="pick" id="presets">${[500,1000,2000,5000].map(v=>`<button type="button" data-act="preset" data-v="${v}" aria-pressed="${(s.start||1000)===v}">${fmt(v)}</button>`).join('')}</div></div>
+  <div class="grid2"><div class="field"><label class="label" for="s-sb">스몰 블라인드</label><input id="s-sb" type="number" min="0" value="${s.sb??5}" inputmode="numeric"></div>
+  <div class="field"><label class="label" for="s-bb">빅 블라인드</label><input id="s-bb" type="number" min="0" value="${s.bb??10}" inputmode="numeric"></div></div>
+  <p class="notice" style="text-align:left;margin:0">블라인드를 0으로 두면 "새 판"에서 자동으로 걷지 않아요.</p>
+  <div class="table" style="border-width:6px;padding:12px"><span class="label" style="color:var(--felt-muted)">한 사람이 받는 칩</span><div class="stacks" id="preview"></div></div>
+  <button class="btn primary block" type="submit">${host?'테이블 열기':'시작하기'}</button>
+ </form>
+ <p class="notice">칩은 놀이용 점수입니다. 실제 돈을 걸지 마세요.</p>`}
+function joinHTML(){return `<div class="top"><button class="btn" data-act="home">← 처음으로</button><span class="brand">참가하기</span></div>
+ <form id="join" class="tools" autocomplete="off">
+  <div class="field"><label class="label" for="j-code">테이블 코드 (4글자)</label><input id="j-code" class="code" maxlength="4" required value="${esc(me.last||'')}" style="text-transform:uppercase" placeholder="ABCD"></div>
+  <div class="field"><label class="label" for="j-name">내 이름</label><input id="j-name" maxlength="12" required value="${esc(me.name||'')}" placeholder="예: 민수"></div>
+  <button class="btn primary block" type="submit">참가</button>
+ </form>
+ <p class="notice">호스트가 보낸 초대 링크로 들어오면 코드가 미리 채워져 있어요.</p>`}
+
+function badge(p){let b='';if(st.turn===p.p)b+='<span class="bd t">차례</span>';if(st.dp===p.p)b+='<span class="bd d">D</span>';if(st.sbp===p.p)b+='<span class="bd">SB</span>';if(st.bbp===p.p)b+='<span class="bd">BB</span>';if(mode!=='local'&&!p.on)b+='<span class="bd off">끊김</span>';return b}
+function raiseOpts(m){const mx=maxBet(),bb=st.cfg.bb||1,cap=m.b+m.s,need=Math.max(0,mx-m.b),bets=st.players.reduce((a,p)=>a+p.b,0);
+ const raw=[['최소',mx>0?Math.max(mx*2,mx+bb):bb],['3배',mx>0?mx*3:bb*3],['팟',mx+st.pot+bets+need]];const out=[],seen=new Set();
+ for(const [l,v] of raw){const to=Math.min(cap,Math.floor(v));if(to>mx&&to>m.b&&!seen.has(to)){seen.add(to);out.push([to===cap?'올인':l,to])}}return out}
+function tableHTML(){
+ const mine=myPlayer(), mx=maxBet(), isHost=mode!=='player';
+ const status=mode==='local'?'<span class="pill">한 기기</span>':net==='on'?'<span class="pill on">연결됨</span>':net==='wait'?'<span class="pill">연결 중</span>':'<span class="pill bad">연결 안 됨</span>';
+ let h=`<div class="top"><span class="brand">칩테이블</span><div class="row">${st.code?`<span class="code" title="테이블 코드">${esc(st.code)}</span>`:''}${mode==='host'?'<button class="btn" data-act="invite" style="min-height:36px;padding:4px 12px">초대 링크</button>':''}${status}<button class="btn" data-act="menu" style="min-height:36px;padding:4px 12px">메뉴</button></div></div>`;
+ if(net==='none'&&mode!=='local')h+=`<p class="tools" style="margin:0;font-size:13px">실시간 서버에 연결하지 못했어요. 인터넷 연결을 확인하고 메뉴 → 처음 화면으로 갔다가 다시 들어와 보세요. 지금 바로 치려면 <b>한 기기로 하기</b>를 쓰세요.</p>`;
+ if(mode==='player'&&!st.got)return h+`<div class="table"><p class="waiting">호스트의 테이블 ${esc(st.code)}에 연결하는 중이에요. 코드가 맞는지, 호스트가 테이블을 열어 두었는지 확인하세요.</p></div>`;
+ h+=`<section class="table" aria-label="테이블"><div class="seats">${st.players.map(p=>`<button type="button" class="seat${(mine&&mine.p===p.p)?' me':''}${p.f?' fold':''}${st.turn===p.p?' turn':''}" data-act="seat" data-p="${esc(p.p)}"><span class="badges">${badge(p)}</span><span class="nm">${esc(p.n)}</span><span class="st">${fmt(p.s)}</span><span class="bt">${p.f?'폴드':p.b?`베팅 <b>${fmt(p.b)}</b>`:'&nbsp;'}</span></button>`).join('')||'<p class="waiting">아직 아무도 없어요. 코드를 알려 주세요.</p>'}</div>
+  <div class="pot"><div class="pile">${st.pot?pileHTML(st.pot):''}</div><span class="label" style="color:var(--felt-muted)">팟</span><span class="amt">${fmt(st.pot)}</span><span class="sub">${st.turn&&P(st.turn)?`<b style="color:var(--gold)">${esc(P(st.turn).n)} 차례</b> · `:''}${st.hand?`${st.hand}번째 판 · `:''}최고 베팅 ${fmt(mx)}${st.cfg.bb?` · 블라인드 ${fmt(st.cfg.sb)}/${fmt(st.cfg.bb)}`:''}</span></div>`;
+ if(mine){const avail=mine.s-staged,myTurn=!st.turn||st.turn===mine.p,busy=!!pending||!myTurn;
+  h+=`<div class="mine"><div class="mine-head"><span class="label" style="color:var(--felt-muted)">${mode==='local'?esc(mine.n)+'의 칩':'내 칩'}${mine.f?' · 폴드함':''}</span><span class="total">${fmt(mine.s)}</span></div>
+   <div class="stacks">${decompose(avail).map(([d,c])=>stackHTML(d,c,{btn:true,dis:busy||mine.f})).join('')||'<p class="waiting">남은 칩이 없어요</p>'}</div>
+   <div class="tray">${pending?`<span class="hint">${slow?'호스트가 아직 받지 못했어요.':'보내는 중…'}</span>${slow?'<button class="btn" data-act="retry">다시 보내기</button><button class="btn" data-act="cancel">취소</button>':''}`:!myTurn?`<span class="hint">지금은 <b style="color:var(--gold)">${esc((P(st.turn)||{}).n||'')}</b> 차례예요</span>`:staged?`<div class="pile">${pileHTML(staged)}</div><span class="amt">${fmt(staged)}</span>`:`<span class="hint">칩을 눌러 올리거나 레이즈를 누르세요${mine.b?` · 지금 베팅 ${fmt(mine.b)}`:''}</span>`}</div>
+   ${raiseOpen&&!pending?`<div class="pick raise">${raiseOpts(mine).map(([l,to])=>`<button type="button" data-act="rz" data-to="${to}" aria-pressed="${mine.b+staged===to}">${l} ${fmt(to)}</button>`).join('')}</div><span class="hint" style="text-align:center">칩을 더 눌러 원하는 만큼 올릴 수도 있어요</span>`:''}
+  </div>`}
+ h+=`</section>`;
+ if(mine){const need=Math.max(0,maxBet()-mine.b),myT=!st.turn||st.turn===mine.p,dis=(pending||mine.f||!myT)?' disabled':'';
+  const tot=mine.b+staged,mx2=maxBet(),short=!!st.turn&&tot<mx2&&staged<mine.s;const lab=!staged?'보내기':short?`콜하려면 ${fmt(mx2-mine.b)} 이상`:(tot>mx2&&mx2>0)?`레이즈 → ${fmt(tot)}`:(tot===mx2&&mx2>0)?`콜 ${fmt(staged)}`:`${fmt(staged)} 베팅`;
+  h+=`<div class="send"><button class="btn" data-act="clear"${staged&&!pending?'':' disabled'}>비우기</button><button class="btn primary" data-act="send"${staged&&!pending&&!mine.f&&myT&&!short?'':' disabled'}>${lab}</button></div>
+  <div class="actions">${need?`<button class="btn" data-act="call"${dis}${mine.s?'':' disabled'}>콜 ${fmt(Math.min(need,mine.s))}</button>`:`<button class="btn" data-act="check"${dis}>체크</button>`}<button class="btn${raiseOpen?' sel':''}" data-act="raise"${dis}${mine.s>need?'':' disabled'}>레이즈</button><button class="btn" data-act="allin"${dis}${mine.s?'':' disabled'}>올인</button><button class="btn danger" data-act="fold"${dis}>폴드</button></div>`}
+ else if(mode==='player'&&st.got)h+=`<p class="tools" style="margin:0">자리가 가득 찼거나 호스트가 아직 자리를 만들지 않았어요.</p>`;
+ if(isHost){h+=`<div class="tools"><span class="label">${mode==='local'?'칩을 움직일 사람':'호스트'}</span>
+  ${mode==='local'?`<div class="who">${st.players.map(p=>`<button class="btn${p.p===actor?' sel':''}" data-act="actor" data-p="${esc(p.p)}">${esc(p.n)}</button>`).join('')}</div>`:''}
+  <div class="row">${st.turn?'':`<button class="btn" data-act="collect"${st.players.some(p=>p.b)?'':' disabled'}>베팅 모으기</button>`}<button class="btn primary" data-act="award"${(st.pot||st.players.some(p=>p.b))?'':' disabled'}>팟 나누기</button></div>
+  <div class="row"><button class="btn primary" data-act="newhand">${st.hand?'다음 판':'선 정하고 시작'}</button><button class="btn" data-act="players">플레이어</button><button class="btn" data-act="undo"${hist.length?'':' disabled'}>되돌리기</button></div></div>`}
+ h+=`<ul class="log" aria-label="기록">${st.log.slice(0,6).map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`;
+ return h}
+
+/* ---------- sheets ---------- */
+function openSheet(html){sheet.innerHTML=`<div class="panel" role="dialog" aria-modal="true">${html}</div>`;sheet.hidden=false}
+function closeSheet(){sheet.hidden=true;sheet.innerHTML='';sel=null}
+function awardSheet(){if(!sel)sel={w:new Set(),amt:null,c:false};const pot=st.pot+st.players.reduce((a,p)=>a+p.b,0);const amt=sel.amt??pot;const n=sel.w.size;
+ openSheet(`<h2>팟 나누기</h2><p style="margin:0">팟 <b class="num" style="font-size:20px">${fmt(pot)}</b>점${st.players.some(p=>p.b)?' (아직 모으지 않은 베팅 포함)':''}</p>
+  <div><span class="label">이긴 사람 (여러 명이면 똑같이 나눠요)</span><div class="pick" style="margin-top:6px">${st.players.map(p=>`<button type="button" class="${p.f?'dim':''}" data-act="aw-pick" data-p="${esc(p.p)}" aria-pressed="${sel.w.has(p.p)}">${esc(p.n)}${p.f?' · 폴드':''}</button>`).join('')}</div></div>
+  <div class="field"><label class="label" for="aw-amt">나눌 점수 (사이드 팟이면 일부만)</label><input id="aw-amt" type="number" min="1" max="${pot}" value="${amt}" inputmode="numeric"></div>
+  <p class="notice" style="text-align:left;margin:0" id="aw-hint">${n?`${n}명에게 ${fmt(Math.floor(Math.min(amt,pot)/n))}점씩${Math.min(amt,pot)%n?`, 남는 ${Math.min(amt,pot)%n}점은 딜러 왼쪽부터 1점씩`:''}`:'이긴 사람을 고르세요.'}</p>
+  <div class="send"><button class="btn" data-act="close">취소</button><button class="btn primary" data-act="aw-go"${n?'':' disabled'}>나누기</button></div>`)}
+function playersSheet(){const lc=mode==='local';const conf=sel&&sel.rm;
+ openSheet(`<h2>플레이어</h2><p class="notice" style="text-align:left;margin:0">위에서 아래 순서가 차례 순서예요. 실제로 앉은 순서대로 맞춰 주세요.</p><div class="plist">${st.players.map(p=>`<div class="prow"><span class="nm">${esc(p.n)} <span class="num" style="font-size:18px">${fmt(p.s)}</span>${p.r?` <span class="label">리바이 ${p.r}</span>`:''}</span>
+   <button class="btn" data-act="rebuy" data-p="${esc(p.p)}">+${fmt(st.cfg.start)} 리바이</button>
+   <button class="btn" data-act="mv" data-d="-1" data-p="${esc(p.p)}" aria-label="앞자리로">↑</button><button class="btn" data-act="mv" data-d="1" data-p="${esc(p.p)}" aria-label="뒷자리로">↓</button>${(st.inHand||[]).includes(p.p)&&!p.f?`<button class="btn" data-act="giveturn" data-p="${esc(p.p)}"${st.turn===p.p?' disabled':''}>차례 주기</button>`:''}
+   ${p.f?`<button class="btn" data-act="unfold" data-p="${esc(p.p)}">폴드 해제</button>`:''}
+   ${conf===p.p?`<button class="btn danger" data-act="rm-go" data-p="${esc(p.p)}">정말 내보내기</button>`:`<button class="btn danger" data-act="rm" data-p="${esc(p.p)}">내보내기</button>`}</div>`).join('')}</div>
+  ${lc&&st.players.length<10?`<form id="addp" class="row"><input id="ap-name" maxlength="12" placeholder="새 플레이어 이름" style="flex:1"><button class="btn" type="submit">추가</button></form>`:''}
+  ${!lc?`<p class="notice" style="text-align:left;margin:0">새 사람은 코드 <b>${esc(st.code)}</b>로 참가하면 자동으로 자리가 생겨요 (최대 ${st.cfg.max}명).</p>`:''}
+  <button class="btn block" data-act="close">닫기</button>`)}
+function handSheet(){const c=st.players.filter(p=>p.s>0);
+ openSheet(`<h2>${st.hand?'다음 판 시작':'첫 판 시작'}</h2><p style="margin:0">누가 선인가요? 선부터 베팅하고, 한 사람이 끝내면 바로 다음 자리로 차례가 넘어가요.${st.cfg.bb?` 블라인드 ${fmt(st.cfg.sb)}/${fmt(st.cfg.bb)}는 선 바로 앞 두 사람이 자동으로 내요.`:''}</p>
+  <div class="pick">${c.map(p=>`<button type="button" data-act="nh-pick" data-p="${esc(p.p)}" aria-pressed="${!!(sel&&sel.fp===p.p)}">${esc(p.n)}</button>`).join('')}</div>
+  <button class="btn" data-act="nh-rand">무작위로 정하기</button>
+  ${c.length<2?'<p class="notice">칩이 남은 사람이 2명 이상이어야 해요.</p>':''}
+  <div class="send"><button class="btn" data-act="close">취소</button><button class="btn primary" data-act="nh-go"${sel&&sel.fp&&c.length>=2?'':' disabled'}>시작</button></div>`)}
+function menuSheet(){const isHost=mode!=='player';const tot=isHost?tableTotal():0;const ok=tot===st.inChips;
+ openSheet(`<h2>메뉴</h2>
+  ${isHost?`<form id="blinds" class="tools"><span class="label">블라인드 바꾸기</span><div class="grid2"><input id="b-sb" type="number" min="0" value="${st.cfg.sb}" aria-label="스몰 블라인드" inputmode="numeric"><input id="b-bb" type="number" min="0" value="${st.cfg.bb}" aria-label="빅 블라인드" inputmode="numeric"></div><button class="btn" type="submit">적용</button></form>
+  <p class="notice" style="text-align:left;margin:0">테이블 위 칩 합계 <b class="num" style="font-size:17px">${fmt(tot)}</b> · 나눠 준 칩 ${fmt(st.inChips)} · ${ok?'일치해요':'<span style="color:var(--danger)">맞지 않아요</span>'}</p>`:''}
+  <div class="rank"><span class="label">현재 순위</span>${[...st.players].sort((a,b)=>(b.s+b.b)-(a.s+a.b)).map((p,i)=>`<div><span>${i+1}. ${esc(p.n)}</span><span class="num" style="font-size:18px">${fmt(p.s+p.b)}</span></div>`).join('')}</div>
+  <button class="btn block" data-act="sound">소리·진동 ${soundOn?'끄기':'켜기'}</button>
+  <button class="btn block" data-act="leave">처음 화면으로 (테이블은 저장돼요)</button>
+  ${isHost?(sel&&sel.end?`<button class="btn danger block" data-act="end-go">테이블을 지우고 끝내기</button>`:`<button class="btn danger block" data-act="end">테이블 끝내기</button>`):''}
+  <button class="btn block" data-act="close">닫기</button>`)}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(!t)return;const a=t.dataset.act,pid=t.dataset.p;
+ switch(a){
+  case 'home':view='home';render();break;
+  case 'go-setup':setupKind=t.dataset.k;view='setup';render();updPreview();break;
+  case 'go-join':view='join';render();break;
+  case 'resume':resume(t.dataset.k);break;
+  case 'preset':$('#s-start').value=t.dataset.v;document.querySelectorAll('#presets button').forEach(b=>b.setAttribute('aria-pressed',b===t));updPreview();break;
+  case 'tap':{const pl=myPlayer();const d=+t.dataset.d;if(pl&&!pending&&staged+d<=pl.s){staged+=d;clack();render()}break}
+  case 'clear':staged=0;raiseOpen=false;render();break;
+  case 'raise':{const m=myPlayer();raiseOpen=!raiseOpen;if(raiseOpen&&m){const o=raiseOpts(m)[0];staged=o?Math.min(o[1]-m.b,m.s):0}else staged=0;render();break}
+  case 'rz':{const m=myPlayer();if(m){staged=Math.max(0,Math.min(+t.dataset.to-m.b,m.s));render()}break}
+  case 'send':if(staged)act('bet',staged);break;
+  case 'check':act('check');break;case 'call':act('call');break;case 'allin':staged=0;act('allin');break;case 'fold':staged=0;act('fold');break;
+  case 'retry':if(pending&&tbl){tbl.presence({req:{id:pending.id,t:pending.t,a:pending.a||0,k:Date.now()}}).catch(()=>{});slow=false;render();const id=pending.id;setTimeout(()=>{if(pending&&pending.id===id){slow=true;render()}},7000)}break;
+  case 'cancel':pending=null;slow=false;render();break;
+  case 'actor':actor=pid;staged=0;raiseOpen=false;render();break;
+  case 'seat':if(mode==='local'){actor=pid;staged=0;render()}else if(mode==='host'){sel=null;playersSheet()}break;
+  case 'collect':hostDo(()=>{const m=collect();if(!m)return false;log(`베팅 ${fmt(m)} 팟으로`)});break;
+  case 'newhand':{staged=0;raiseOpen=false;const has=p=>p.s>0;const j=st.fp?seatAfter(idxOf(st.fp),has):st.players.findIndex(has);sel={fp:j>=0?st.players[j].p:null};handSheet();break}
+  case 'nh-pick':sel.fp=pid;handSheet();break;
+  case 'nh-rand':{const c=st.players.filter(p=>p.s>0);if(c.length){sel.fp=c[Math.floor(Math.random()*c.length)].p;handSheet()}break}
+  case 'nh-go':{const fp=sel&&sel.fp;closeSheet();hostDo(()=>newHand(fp));break}
+  case 'undo':undo();break;
+  case 'award':sel=null;awardSheet();break;
+  case 'aw-pick':{const amt=+($('#aw-amt')?.value)||null;sel.amt=amt;sel.w.has(pid)?sel.w.delete(pid):sel.w.add(pid);awardSheet();break}
+  case 'aw-go':{const amt=+($('#aw-amt').value)||0;const w=[...sel.w];closeSheet();hostDo(()=>award(w,amt));break}
+  case 'players':sel=null;playersSheet();break;
+  case 'rebuy':hostDo(()=>{const p=P(pid);if(!p)return false;p.s+=st.cfg.start;p.r++;st.inChips+=st.cfg.start;log(`${p.n} 리바이 +${fmt(st.cfg.start)}`)});playersSheet();break;
+  case 'mv':hostDo(()=>{const i=idxOf(pid),j=i+(+t.dataset.d);if(i<0||j<0||j>=st.players.length)return false;const x=st.players[i];st.players[i]=st.players[j];st.players[j]=x;log('자리 순서 변경')});playersSheet();break;
+  case 'giveturn':hostDo(()=>{const p=P(pid);if(!p)return false;st.turn=pid;log(`${p.n} 차례로 변경`)});playersSheet();break;
+  case 'unfold':hostDo(()=>{const p=P(pid);p.f=false;log(`${p.n} 폴드 해제`)});playersSheet();break;
+  case 'rm':sel={rm:pid};playersSheet();break;
+  case 'rm-go':hostDo(()=>{const i=idxOf(pid);if(i<0)return false;const p=st.players[i];st.inChips-=p.s+p.b;st.players.splice(i,1);if(actor===pid)actor=st.players[0]?.p;log(`${p.n} 퇴장 (칩 ${fmt(p.s+p.b)} 회수)`)});sel=null;playersSheet();break;
+  case 'menu':sel=null;menuSheet();break;
+  case 'sound':soundOn=!soundOn;store.set('ct.sound',soundOn);menuSheet();break;
+  case 'leave':leave();break;
+  case 'end':sel={end:true};menuSheet();break;
+  case 'end-go':store.del(mode==='host'?'ct.host':'ct.local');leave();break;
+  case 'close':closeSheet();break;
+  case 'invite':{const url=location.origin+location.pathname+'#'+st.code;const ok=()=>{t.textContent='복사됨';setTimeout(()=>{t.textContent='초대 링크'},1500)};try{navigator.clipboard.writeText(url).then(ok,()=>openSheet(`<h2>초대 링크</h2><input readonly value="${esc(url)}" onfocus="this.select()"><button class="btn block" data-act="close">닫기</button>`))}catch(e){openSheet(`<h2>초대 링크</h2><input readonly value="${esc(url)}"><button class="btn block" data-act="close">닫기</button>`)}break}
+ }});
+sheet.addEventListener('click',e=>{if(e.target===sheet)closeSheet()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sheet.hidden)closeSheet()});
+document.addEventListener('input',e=>{if(e.target.id==='s-start')updPreview();if(e.target.id==='aw-amt'&&sel){sel.amt=+e.target.value||0;const pot=st.pot+st.players.reduce((a,p)=>a+p.b,0),n=sel.w.size,amt=Math.min(sel.amt,pot);const hint=$('#aw-hint');if(hint&&n)hint.textContent=`${n}명에게 ${fmt(Math.floor(amt/n))}점씩${amt%n?`, 남는 ${amt%n}점은 딜러 왼쪽부터 1점씩`:''}`}});
+function updPreview(){const el=$('#preview'),v=Math.min(100000,Math.max(0,+($('#s-start')?.value)||0));if(el)el.innerHTML=decompose(v).map(([d,c])=>stackHTML(d,c,{})).join('')}
+document.addEventListener('submit',e=>{e.preventDefault();const f=e.target;
+ if(f.id==='setup'){const num=(id,lo,hi,dv)=>{const v=Math.floor(+$(id)?.value);return Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):dv};
+  const o={start:num('#s-start',10,100000,1000),sb:num('#s-sb',0,100000,0),bb:num('#s-bb',0,100000,0)};
+  if(setupKind==='host'){o.name=$('#s-name').value;o.play=$('#s-play').checked;o.max=num('#s-max',2,10,6);store.set('ct.setup',{start:o.start,sb:o.sb,bb:o.bb,max:o.max});startTable('host',o)}
+  else{const names=$('#s-names').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,10);if(names.length<2){$('#s-names').setCustomValidity('2명 이상 입력하세요');$('#s-names').reportValidity();return}o.names=names;o.max=10;store.set('ct.setup',{start:o.start,sb:o.sb,bb:o.bb});startTable('local',o)}}
+ else if(f.id==='join'){const code=$('#j-code').value.toUpperCase().replace(/[^A-Z]/g,'');if(code.length!==4){$('#j-code').setCustomValidity('4글자 코드를 입력하세요');$('#j-code').reportValidity();return}joinTable(code,$('#j-name').value)}
+ else if(f.id==='blinds'){const sb=Math.max(0,Math.floor(+$('#b-sb').value)||0),bb=Math.max(0,Math.floor(+$('#b-bb').value)||0);hostDo(()=>{st.cfg.sb=sb;st.cfg.bb=bb;log(`블라인드 ${fmt(sb)}/${fmt(bb)}로 변경`)});menuSheet()}
+ else if(f.id==='addp'){const n=$('#ap-name').value;if(!n.trim())return;hostDo(()=>{const p=addPlayer('L'+Math.random().toString(36).slice(2,8),n);log(`${p.n} 입장 · ${fmt(st.cfg.start)}점 지급`)});playersSheet()}});
+document.addEventListener('input',e=>{if(e.target.setCustomValidity)e.target.setCustomValidity('')},true);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&view==='table'){lock=null;wake()}});
+
+{const h=(location.hash||'').slice(1).toUpperCase();if(/^[A-Z]{4}$/.test(h)){me.last=h;view='join'}}
+render();
+})();
+</script>
+</body>
+</html>
